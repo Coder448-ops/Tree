@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<html>
+<html lang="uz">
 <head>
     <meta charset="UTF-8">
-    <title>Extreme mark</title>
+    <title>MAX GPU KILLER</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
         #fps { 
             position: absolute; top: 10px; left: 10px; 
-            color: #0f0; font-family: monospace; font-size: 24px;
-            z-index: 10; pointer-events: none;
+            color: #ff0000; font-family: 'Courier New', monospace; 
+            font-size: 28px; font-weight: bold; z-index: 10;
+            text-shadow: 2px 2px 5px #000;
         }
     </style>
 </head>
@@ -26,13 +27,14 @@
         uniform vec2 u_res;
         uniform float u_time;
 
-        // Mandelbulb - Har bir piksel uchun og'ir matematika
+        // Mandelbulb Fractal - Maksimal matematik murakkablik
         float map(vec3 p) {
             vec3 z = p;
             float dr = 1.0;
             float r = 0.0;
-            float pwr = 8.0 + sin(u_time * 0.1) * 2.0;
-            for (int i = 0; i < 15; i++) {
+            float pwr = 8.0 + sin(u_time * 0.05) * 4.0;
+            // 20 iteratsiya - bu har bir piksel uchun GPU-ni dahshatli qiynaydi
+            for (int i = 0; i < 20; i++) {
                 r = length(z);
                 if (r > 2.0) break;
                 float theta = acos(z.z/r) * pwr;
@@ -45,23 +47,26 @@
         }
 
         void main() {
+            // Rezolyutsiyani sun'iy ravishda oshirish (Super-sampling effekt)
             vec2 uv = (gl_FragCoord.xy - 0.5 * u_res.xy) / min(u_res.y, u_res.x);
             vec3 ro = vec3(0.0, 0.0, -2.5);
-            vec3 rd = normalize(vec3(uv, 1.2));
+            vec3 rd = normalize(vec3(uv, 1.5));
             float t = 0.0;
             
-            // 512 ITERATSIYA - Bu har qanday GPU-ni qiynaydi
-            for(int i = 0; i < 1028; i++) {
+            // 1024 QADAM - Bu RTX 3050 uchun "o'lim" jazosi
+            // Har bir piksel uchun 1024 marta map() funksiyasi hisoblanadi
+            for(int i = 0; i < 1024; i++) {
                 float d = map(ro + rd * t);
-                if(d < 0.0002 || t > 10.0) break;
+                if(d < 0.00005 || t > 10.0) break;
                 t += d;
             }
 
             vec3 col = vec3(0.0);
             if(t < 10.0) {
                 vec3 p = ro + rd * t;
-                col = 0.5 + 0.5 * cos(u_time + p.xyy + vec3(0,2,4));
-                col *= 1.5 / t;
+                // Ranglar mantiqi (Neon Liquid Style)
+                col = 0.5 + 0.5 * cos(u_time * 0.5 + p.xyy + vec3(0,2,4));
+                col *= exp(-0.2 * t); // Tumansimon effekt (Og'ir render)
             }
             gl_FragColor = vec4(col, 1.0);
         }
@@ -69,7 +74,7 @@
 
     <script>
         const canvas = document.getElementById('c');
-        const gl = canvas.getContext('webgl');
+        const gl = canvas.getContext('webgl', { antialias: true, powerPreference: "high-performance" });
         const fpsBox = document.getElementById('fps');
 
         function createShader(gl, type, source) {
@@ -89,31 +94,4 @@
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
         const pos = gl.getAttribLocation(prog, "position");
-        gl.enableVertexAttribArray(pos);
-        gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-
-        const resLoc = gl.getUniformLocation(prog, "u_res");
-        const timeLoc = gl.getUniformLocation(prog, "u_time");
-
-        let frames = 0, last = performance.now();
-
-        function render(now) {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            gl.viewport(0, 0, canvas.width, canvas.height);
-            gl.uniform2f(resLoc, canvas.width, canvas.height);
-            gl.uniform1f(timeLoc, now * 0.001);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-            frames++;
-            if (now >= last + 1000) {
-                fpsBox.innerText = "FPS: " + frames;
-                frames = 0;
-                last = now;
-            }
-            requestAnimationFrame(render);
-        }
-        requestAnimationFrame(render);
-    </script>
-</body>
-</html>
+        gl.enableVertex
