@@ -1,156 +1,122 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>VolumeShader BM MAX</title>
+<title>VolumeShader BM Clone</title>
 <style>
-*{margin:0;padding:0}
-body{background:#000;overflow:hidden}
-canvas{position:fixed;inset:0}
-.ui{
-  position:fixed;
-  bottom:38px;
-  left:50%;
-  transform:translateX(-50%);
-  display:flex;
-  align-items:center;
-  gap:14px;
-  padding:10px 16px;
-  border-radius:16px;
-  background:rgba(20,20,20,.7);
-}
-.icon{
-  width:16px;height:16px;
-  background:white;
-  border-radius:3px;
-}
-input{
-  width:180px;
-  appearance:none;
-  height:4px;
-  background:#888;
-}
-input::-webkit-slider-thumb{
-  appearance:none;
-  width:14px;height:14px;
-  border-radius:50%;
-  background:#fff;
-}
+  * { margin: 0; padding: 0; }
+  body { overflow: hidden; background: #000; }
+  canvas { position: fixed; inset: 0; }
 </style>
 </head>
 <body>
-
-<canvas id="c"></canvas>
-
-<div class="ui">
-  <div class="icon"></div>
-  <input id="v" type="range" min="1" max="100" value="100">
-</div>
-
+<canvas id="glcanvas"></canvas>
 <script>
-const c = document.getElementById("c");
-const v = document.getElementById("v");
-c.width = innerWidth;
-c.height = innerHeight;
+const canvas = document.getElementById("glcanvas");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+const gl = canvas.getContext("webgl");
 
-const gl = c.getContext("webgl", {
-  antialias:false,
-  powerPreference:"high-performance"
-});
-
-const vs = `
-attribute vec2 a;
-varying vec2 uv;
-void main(){
-  uv = a;
-  gl_Position = vec4(a,0.,1.);
+// Vertex shader
+const vsSource = `
+attribute vec2 aPos;
+varying vec2 vUV;
+void main() {
+  vUV = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
 }
 `;
 
-const fs = `
+// Heavy ray‑marching fractal shader
+const fsSource = `
 precision highp float;
-uniform float t;
-uniform float p;
-varying vec2 uv;
+uniform float uTime;
+varying vec2 vUV;
 
-// heavy hash
-float h(vec2 x){
-  return fract(sin(dot(x,vec2(127.1,311.7)))*43758.5453);
+// 3D distance function (Mandelbulb SDF)
+float mandelbulb(vec3 p) {
+  float power = 8.0;
+  float dr = 1.0;
+  float r = length(p);
+  for(int i = 0; i < 64; i++) {
+    if(r > 2.0) break;
+    float theta = acos(p.z/r);
+    float phi = atan(p.y, p.x);
+    float zr = pow(r, power);
+    theta *= power;
+    phi *= power;
+    p = zr * vec3(
+      sin(theta)*cos(phi),
+      sin(theta)*sin(phi),
+      cos(theta)
+    ) + p;
+    dr = pow(r, power - 1.0)*power*dr + 1.0;
+    r = length(p);
+  }
+  return 0.5 * log(r) * r / dr;
 }
 
-float n(vec2 x){
-  vec2 i=floor(x), f=fract(x);
-  float a=h(i), b=h(i+vec2(1,0));
-  float c=h(i+vec2(0,1)), d=h(i+vec2(1,1));
-  vec2 u=f*f*(3.-2.*f);
-  return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y;
+vec3 getNormal(vec3 p){
+  float eps = 0.0005;
+  return normalize(vec3(
+    mandelbulb(p + vec3(eps, 0, 0)) - mandelbulb(p - vec3(eps, 0, 0)),
+    mandelbulb(p + vec3(0, eps, 0)) - mandelbulb(p - vec3(0, eps, 0)),
+    mandelbulb(p + vec3(0, 0, eps)) - mandelbulb(p - vec3(0, 0, eps))
+  ));
 }
 
-void main(){
-  vec2 p0 = uv*1.3;
-  vec3 col = vec3(0.0);
-  float strength = p*0.12;
-
-  // VOLUMESHADER-STYLE BARS + EXTREME LOAD
-  for(int i=0;i<260;i++){
-    float fi=float(i);
-    vec2 q = p0 +
-      vec2(
-        sin(t*0.8+fi)*0.04,
-        cos(t*0.6+fi)*0.04
-      );
-
-    float nn = n(q*fi*1.4);
-    float bar = abs(sin(nn*fi*2.0));
-
-    col += vec3(
-      bar*0.8,
-      bar*0.9,
-      bar
-    ) * strength;
+void main() {
+  vec2 uv = vUV * 2.0 - 1.0;
+  vec3 rayOrigin = vec3(0.0, 0.0, -4.0);
+  vec3 rayDir = normalize(vec3(uv, 1.5));
+  
+  float totalDist = 0.0;
+  for(int i = 0; i < 128; i++) {
+    vec3 p = rayOrigin + totalDist * rayDir;
+    float dist = mandelbulb(p);
+    totalDist += dist * 0.5;
+    if(dist < 0.001) break;
   }
 
-  gl_FragColor = vec4(col,1.);
+  vec3 col = vec3(sin(totalDist + uTime),cos(totalDist*0.7 + uTime),sin(totalDist*0.4 - uTime));
+  gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-function sh(t,s){
-  const x=gl.createShader(t);
-  gl.shaderSource(x,s);
-  gl.compileShader(x);
-  return x;
+function compileShader(type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  return shader;
 }
 
-const pr = gl.createProgram();
-gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));
-gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));
-gl.linkProgram(pr);
-gl.useProgram(pr);
+const program = gl.createProgram();
+gl.attachShader(program, compileShader(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(program);
+gl.useProgram(program);
 
-const buf = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
- -1,-1, 1,-1, -1,1,
- -1,1, 1,-1, 1,1
-]),gl.STATIC_DRAW);
+const posBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -1,-1, 1,-1, -1,1,
+  -1,1, 1,-1, 1,1
+]), gl.STATIC_DRAW);
 
-const a = gl.getAttribLocation(pr,"a");
-gl.enableVertexAttribArray(a);
-gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+const positionLoc = gl.getAttribLocation(program, "aPos");
+gl.enableVertexAttribArray(positionLoc);
+gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-const ut = gl.getUniformLocation(pr,"t");
-const up = gl.getUniformLocation(pr,"p");
+const timeUniform = gl.getUniformLocation(program, "uTime");
 
-let time=0;
-function draw(){
-  time+=0.016;
-  gl.uniform1f(ut,time);
-  gl.uniform1f(up,v.value);
-  gl.drawArrays(gl.TRIANGLES,0,6);
-  requestAnimationFrame(draw);
+let t = 0;
+function render() {
+  t += 0.02;
+  gl.uniform1f(timeUniform, t);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  requestAnimationFrame(render);
 }
-draw();
+render();
 </script>
-
 </body>
 </html>
