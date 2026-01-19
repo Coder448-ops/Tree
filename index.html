@@ -2,142 +2,131 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="user-scalable=no">
-<title>VolumeShader_BM MAX STRESS</title>
+<title>VolumeShader_BM ULTRA STRESS</title>
 <style>
-body { background:#131115; margin:0; overflow:hidden; }
-#c1 { position:fixed; left:0; top:0; }
-#btn { position: fixed; left:0; top:0; }
-#main { transform-origin: 0 0; position:fixed; left:0; top:0; }
-#config { position: fixed; left:0; top:30px; display:none; }
+body{margin:0;overflow:hidden;background:#131115;}
+#c1{position:fixed;left:0;top:0;}
+#btn{position:fixed;left:0;top:0;}
+#main{transform-origin:0 0;position:fixed;left:0;top:0;}
+#config{position:fixed;left:0;top:30px;display:none;}
+#fps{position:fixed;top:0;right:0;color:#0f0;font-family:monospace;z-index:999;}
 </style>
 </head>
 <body>
 <div id="main">
-<canvas id="c1" width="1024" height="1024"><span>不支持canvas浏览器</span></canvas>
+<canvas id="c1" width="1024" height="1024"></canvas>
 </div>
+<div id="fps">FPS: 0</div>
 <button id="btn">CONFIG</button>
 <div id="config">
-<textarea id="kernel" cols="30" rows="10"></textarea><br />
+<textarea id="kernel" cols="30" rows="10"></textarea><br/>
 <button id="apply">APPLY</button>
 <button id="cancle">CANCLE</button>
 </div>
 
 <script>
-alert("VolumeShader_BM MAX STRESS\nGPU 2x + Spiral/Yulduz Visuals");
+alert("VolumeShader_BM ULTRA STRESS\nGPU MAX TEST");
 
-var cx, cy;
-var glposition, glright, glforward, glup, glorigin, glx, gly, gllen;
-var canvas = document.getElementById('c1');
-var gl;
-var ang1=2.8, ang2=0.4, len=1.6;
-var cenx=0, ceny=0, cenz=0;
-var ml=0, mr=0, mm=0, mx=0, my=0, mx1=0, my1=0, lasttimen=0;
+let cx, cy, canvas = document.getElementById('c1');
+let gl, ang1=2.8, ang2=0.4, len=1.6, cenx=0,ceny=0,cenz=0;
+let ml=0,mr=0,mm=0,mx=0,my=0,mx1=0,my1=0,lasttimen=0;
 
-// Kernel: 2x GPU + Spiral/Yulduz
-var KERNEL = `
+let fpsDisplay = document.getElementById('fps');
+let lastFrame = performance.now(), frameCount=0;
+
+// Kernel: 10× iterations + spiral/yulduz
+let KERNEL = `
 float kernal(vec3 ver){
-    vec3 a = ver;
-    float b,c,d,e;
-    for(int i=0;i<10;i++){   // 2x iterations
+    vec3 a=ver; float b,c,d;
+    for(int i=0;i<50;i++){
         b=length(a);
-        c=atan(a.y,a.x)*8.0 + float(i)*0.3;
-        d=acos(a.z/b)*8.0 + float(i)*0.2;
+        c=atan(a.y,a.x)*8.0+float(i)*0.3;
+        d=acos(a.z/b)*8.0+float(i)*0.2;
         b=pow(b,8.0);
-        a = vec3(
-            b*sin(d)*cos(c),
-            b*sin(d)*sin(c),
-            b*cos(d)
-        ) + ver + vec3(sin(float(i))*0.1, cos(float(i))*0.1, 0.05); // spiral/yulduz effect
-        if(b>6.0){ break; }
+        a = vec3(b*sin(d)*cos(c),b*sin(d)*sin(c),b*cos(d))+ver+vec3(sin(float(i))*0.1,cos(float(i))*0.1,0.05);
+        if(b>6.0){break;}
     }
-    return 4.0 - a.x*a.x - a.y*a.y - a.z*a.z;
+    return 4.0 - dot(a,a);
 }`;
 
 // Vertex shader
-var VSHADER_SOURCE = `
+let VSHADER_SOURCE = `
 attribute vec4 position;
 varying vec3 dir, localdir;
 uniform vec3 right, forward, up, origin;
 uniform float x,y;
 void main(){
-    gl_Position = position;
-    dir = forward + right*position.x*x + up*position.y*y;
-    localdir = vec3(position.x*x, position.y*y, -1.0);
+    gl_Position=position;
+    dir=forward+right*position.x*x+up*position.y*y;
+    localdir=vec3(position.x*x,position.y*y,-1.0);
 }`;
 
 // Fragment shader
-var FSHADER_SOURCE = `
+let FSHADER_SOURCE = `
 precision highp float;
 uniform vec3 right, forward, up, origin;
 varying vec3 dir, localdir;
 uniform float len;
-` + KERNEL + `
+`+KERNEL+`
 void main(){
-    vec3 color = vec3(0.0);
-    float step = 0.002;
-    float v1 = kernal(origin + dir*(step*len));
-    float v2 = kernal(origin);
-    float r3=0.0; int sign=0;
+    vec3 color=vec3(0.0); float step=0.002;
+    float v1=kernal(origin+dir*(step*len));
+    float v2=kernal(origin); float r3=0.0; int sign=0;
 
-    // Ray marching: 1000 -> 2000 steps
-    for(int k=2;k<2002;k++){
-        vec3 ver = origin + dir*(step*len*float(k));
-        float v = kernal(ver);
-        if(v>0.0 && v1<0.0){
-            r3=step*len*float(k);
-            sign=1; break;
-        }
+    for(int k=2;k<10002;k++){ // 10,000 steps
+        vec3 ver=origin+dir*(step*len*float(k));
+        float v=kernal(ver);
+        if(v>0.0&&v1<0.0){r3=step*len*float(k); sign=1; break;}
         v2=v1; v1=v;
     }
 
     if(sign==1){
         vec3 n;
         vec3 ver = localdir;
-        n.x = kernal(ver - right*(r3*0.00025)) - kernal(ver + right*(r3*0.00025));
-        n.y = kernal(ver - up*(r3*0.00025)) - kernal(ver + up*(r3*0.00025));
-        n.z = kernal(ver + forward*(r3*0.00025)) - kernal(ver - forward*(r3*0.00025));
-        float rn = 1.0 / sqrt(n.x*n.x+n.y*n.y+n.z*n.z);
-        n *= rn;
-
-        // Enhanced dynamic colors
-        color = n * vec3(sin(r3*5.0)*0.5+0.5, cos(r3*3.0)*0.5+0.5, sin(r3*7.0)*0.5+0.5);
+        n.x=kernal(ver-right*(r3*0.00025))-kernal(ver+right*(r3*0.00025));
+        n.y=kernal(ver-up*(r3*0.00025))-kernal(ver+up*(r3*0.00025));
+        n.z=kernal(ver+forward*(r3*0.00025))-kernal(ver-forward*(r3*0.00025));
+        n/=sqrt(dot(n,n));
+        color=n*vec3(sin(r3*5.0)*0.5+0.5,cos(r3*3.0)*0.5+0.5,sin(r3*7.0)*0.5+0.5);
     }
-    gl_FragColor = vec4(color,1.0);
+    gl_FragColor=vec4(color,1.0);
 }`;
+
+let glposition, glright, glforward, glup, glorigin, glx, gly, gllen;
+let shaderProgram, vertshader, fragshader;
 
 function initGL(){
     gl = canvas.getContext('webgl');
-    var vertshader = gl.createShader(gl.VERTEX_SHADER);
+    vertshader=gl.createShader(gl.VERTEX_SHADER);
     gl.shaderSource(vertshader,VSHADER_SOURCE);
     gl.compileShader(vertshader);
 
-    var fragshader = gl.createShader(gl.FRAGMENT_SHADER);
+    fragshader=gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fragshader,FSHADER_SOURCE);
     gl.compileShader(fragshader);
 
-    var shaderProgram = gl.createProgram();
-    gl.attachShader(shaderProgram, vertshader);
-    gl.attachShader(shaderProgram, fragshader);
+    shaderProgram=gl.createProgram();
+    gl.attachShader(shaderProgram,vertshader);
+    gl.attachShader(shaderProgram,fragshader);
     gl.linkProgram(shaderProgram);
     gl.useProgram(shaderProgram);
 
-    glposition = gl.getAttribLocation(shaderProgram,'position');
-    glright = gl.getUniformLocation(shaderProgram,'right');
-    glforward = gl.getUniformLocation(shaderProgram,'forward');
-    glup = gl.getUniformLocation(shaderProgram,'up');
-    glorigin = gl.getUniformLocation(shaderProgram,'origin');
-    glx = gl.getUniformLocation(shaderProgram,'x');
-    gly = gl.getUniformLocation(shaderProgram,'y');
-    gllen = gl.getUniformLocation(shaderProgram,'len');
+    glposition=gl.getAttribLocation(shaderProgram,'position');
+    glright=gl.getUniformLocation(shaderProgram,'right');
+    glforward=gl.getUniformLocation(shaderProgram,'forward');
+    glup=gl.getUniformLocation(shaderProgram,'up');
+    glorigin=gl.getUniformLocation(shaderProgram,'origin');
+    glx=gl.getUniformLocation(shaderProgram,'x');
+    gly=gl.getUniformLocation(shaderProgram,'y');
+    gllen=gl.getUniformLocation(shaderProgram,'len');
 
-    var positions = [-1,-1,0, 0,1,0, 1,-1,0, 1,-1,0, 0,1,0, 1,1,0];
-    var buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    let positions=[-1,-1,0, 0,1,0, 1,-1,0, 1,-1,0, 0,1,0, 1,1,0];
+    let buffer=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(positions),gl.STATIC_DRAW);
     gl.vertexAttribPointer(glposition,3,gl.FLOAT,false,0,0);
     gl.enableVertexAttribArray(glposition);
 }
-
 initGL();
 
 function draw(){
@@ -157,28 +146,43 @@ function draw(){
 function animate(){
     ang1+=0.01;
     draw();
+    frameCount++;
+    let now=performance.now();
+    if(now-lastFrame>1000){
+        fpsDisplay.innerText="FPS: "+frameCount;
+        frameCount=0;
+        lastFrame=now;
+    }
     requestAnimationFrame(animate);
 }
 animate();
 
-// CONFIG panel
-document.getElementById("btn").addEventListener("click", function(){
-    var state = this.innerText=="CONFIG";
-    this.innerText = state ? "HIDE":"CONFIG";
-    document.getElementById("config").style.display = state?"inline":"none";
-});
+// Window resize
+function resizeCanvas(){
+    cx=document.body.clientWidth;
+    cy=document.body.clientHeight;
+    let scale = Math.min(cx,cy)/1024;
+    document.getElementById("main").style.width="1024px";
+    document.getElementById("main").style.height="1024px";
+    document.getElementById("main").style.transform="scale("+scale+","+scale+")";
+}
+window.onresize=resizeCanvas;
+resizeCanvas();
 
-document.getElementById("apply").addEventListener("click", function(){
-    KERNEL = document.getElementById("kernel").value;
-    gl.shaderSource(fragshader, FSHADER_SOURCE+KERNEL);
+// CONFIG panel
+document.getElementById("btn").addEventListener("click",function(){
+    let state=this.innerText=="CONFIG";
+    this.innerText=state?"HIDE":"CONFIG";
+    document.getElementById("config").style.display=state?"inline":"none";
+});
+document.getElementById("apply").addEventListener("click",function(){
+    KERNEL=document.getElementById("kernel").value;
+    gl.shaderSource(fragshader,FSHADER_SOURCE+KERNEL);
     gl.compileShader(fragshader);
 });
-
-document.getElementById("cancle").addEventListener("click", function(){
-    document.getElementById("kernel").value = KERNEL;
+document.getElementById("cancle").addEventListener("click",function(){
+    document.getElementById("kernel").value=KERNEL;
 });
-
-// mouse + touch controls (saqlangan)
 </script>
 </body>
 </html>
