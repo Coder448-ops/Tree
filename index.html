@@ -2,23 +2,39 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>GPU MAX</title>
+<title>VolumeShader BM MAX</title>
 <style>
 *{margin:0;padding:0}
 body{background:#000;overflow:hidden}
 canvas{position:fixed;inset:0}
 .ui{
-  position:fixed;bottom:40px;left:50%;
+  position:fixed;
+  bottom:38px;
+  left:50%;
   transform:translateX(-50%);
-  display:flex;gap:12px;
-  padding:10px 14px;border-radius:14px;
-  background:rgba(0,0,0,.65);
-  backdrop-filter:blur(10px);
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:10px 16px;
+  border-radius:16px;
+  background:rgba(20,20,20,.7);
 }
-.icon{color:#fff;font-size:22px}
-input{width:170px;appearance:none;height:4px;background:#666}
+.icon{
+  width:16px;height:16px;
+  background:white;
+  border-radius:3px;
+}
+input{
+  width:180px;
+  appearance:none;
+  height:4px;
+  background:#888;
+}
 input::-webkit-slider-thumb{
-  appearance:none;width:14px;height:14px;border-radius:50%;background:#fff
+  appearance:none;
+  width:14px;height:14px;
+  border-radius:50%;
+  background:#fff;
 }
 </style>
 </head>
@@ -27,64 +43,74 @@ input::-webkit-slider-thumb{
 <canvas id="c"></canvas>
 
 <div class="ui">
-  <div class="icon">🔥</div>
-  <input id="p" type="range" min="1" max="100" value="100">
+  <div class="icon"></div>
+  <input id="v" type="range" min="1" max="100" value="100">
 </div>
 
 <script>
-const c=document.getElementById("c");
-const p=document.getElementById("p");
-c.width=innerWidth; c.height=innerHeight;
+const c = document.getElementById("c");
+const v = document.getElementById("v");
+c.width = innerWidth;
+c.height = innerHeight;
 
-const gl=c.getContext("webgl",{antialias:false,preserveDrawingBuffer:false});
+const gl = c.getContext("webgl", {
+  antialias:false,
+  powerPreference:"high-performance"
+});
 
-const vs=`
+const vs = `
 attribute vec2 a;
-varying vec2 v;
-void main(){ v=a; gl_Position=vec4(a,0.,1.); }
+varying vec2 uv;
+void main(){
+  uv = a;
+  gl_Position = vec4(a,0.,1.);
+}
 `;
 
-const fs=`
+const fs = `
 precision highp float;
 uniform float t;
-uniform float power;
-varying vec2 v;
+uniform float p;
+varying vec2 uv;
 
-float hash(vec2 p){
-  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);
+// heavy hash
+float h(vec2 x){
+  return fract(sin(dot(x,vec2(127.1,311.7)))*43758.5453);
 }
-float noise(vec2 p){
-  vec2 i=floor(p), f=fract(p);
-  float a=hash(i);
-  float b=hash(i+vec2(1.,0.));
-  float c=hash(i+vec2(0.,1.));
-  float d=hash(i+vec2(1.,1.));
+
+float n(vec2 x){
+  vec2 i=floor(x), f=fract(x);
+  float a=h(i), b=h(i+vec2(1,0));
+  float c=h(i+vec2(0,1)), d=h(i+vec2(1,1));
   vec2 u=f*f*(3.-2.*f);
   return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y;
 }
 
 void main(){
-  vec2 uv=v*1.2;
-  vec3 col=vec3(0.);
-  float k=power*0.08;
+  vec2 p0 = uv*1.3;
+  vec3 col = vec3(0.0);
+  float strength = p*0.12;
 
-  // EXTREME GPU LOAD 🔥🔥🔥
-  for(int i=0;i<220;i++){
+  // VOLUMESHADER-STYLE BARS + EXTREME LOAD
+  for(int i=0;i<260;i++){
     float fi=float(i);
-    vec2 q=uv+
+    vec2 q = p0 +
       vec2(
-        sin(t*0.6+fi)*0.03,
-        cos(t*0.5+fi)*0.03
+        sin(t*0.8+fi)*0.04,
+        cos(t*0.6+fi)*0.04
       );
-    float n=noise(q*fi*1.7);
-    col+=vec3(
-      sin(n*fi*1.3),
-      cos(n*fi*1.1),
-      sin(n*fi*0.9)
-    )*k;
+
+    float nn = n(q*fi*1.4);
+    float bar = abs(sin(nn*fi*2.0));
+
+    col += vec3(
+      bar*0.8,
+      bar*0.9,
+      bar
+    ) * strength;
   }
 
-  gl_FragColor=vec4(col,1.);
+  gl_FragColor = vec4(col,1.);
 }
 `;
 
@@ -95,31 +121,31 @@ function sh(t,s){
   return x;
 }
 
-const pr=gl.createProgram();
+const pr = gl.createProgram();
 gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));
 gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));
 gl.linkProgram(pr);
 gl.useProgram(pr);
 
-const b=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,b);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
 gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
  -1,-1, 1,-1, -1,1,
  -1,1, 1,-1, 1,1
 ]),gl.STATIC_DRAW);
 
-const a=gl.getAttribLocation(pr,"a");
+const a = gl.getAttribLocation(pr,"a");
 gl.enableVertexAttribArray(a);
 gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
 
-const ut=gl.getUniformLocation(pr,"t");
-const up=gl.getUniformLocation(pr,"power");
+const ut = gl.getUniformLocation(pr,"t");
+const up = gl.getUniformLocation(pr,"p");
 
 let time=0;
 function draw(){
   time+=0.016;
   gl.uniform1f(ut,time);
-  gl.uniform1f(up,p.value);
+  gl.uniform1f(up,v.value);
   gl.drawArrays(gl.TRIANGLES,0,6);
   requestAnimationFrame(draw);
 }
